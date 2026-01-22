@@ -1,0 +1,30 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+ 
+processors:
+  batch:
+ 
+exporters:
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+ 
+extensions:
+  health_check:
+  pprof:
+  zpages:
+ 
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
