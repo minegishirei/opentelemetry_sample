@@ -1,0 +1,33 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+ 
+processors:
+  batch:
+ 
+exporters:
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  awsxray:
+    region: "us-east-1"
+    # local_mode: false (AWS にトレースを送信)
+ 
+extensions:
+  health_check:
+  pprof:
+  zpages:
+ 
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp, awsxray]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
