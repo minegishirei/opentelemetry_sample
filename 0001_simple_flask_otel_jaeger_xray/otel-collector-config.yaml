@@ -13,8 +13,8 @@ exporters:
     tls:
       insecure: true
   awsxray:
-    region: "us-east-1"
-    # local_mode: false (AWS にトレースを送信)
+    region: "ap-northeast-1"
+    local_mode: false
  
 extensions:
   health_check:
