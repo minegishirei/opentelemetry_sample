@@ -34,13 +34,3 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
     depends_on:
       - otel-collector
-  # AWS X-Ray Daemon
-  xray-daemon:
-    image: public.ecr.aws/xray/aws-xray-daemon:latest
-    ports:
-      - "2000:2000/udp"
-      - "2000:2000/tcp"
-    environment:
-      - LOG_LEVEL=info
-      - AWS_REGION=us-east-1
-      - LOCAL_MODE=true
