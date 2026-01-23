@@ -3,7 +3,14 @@ receivers:
     protocols:
       grpc:
       http:
- 
+  hostmetrics:
+    collection_interval: 10s
+    scrapers:
+      - cpu
+      - memory
+      - disk
+      - processes
+
 processors:
   batch:
  
@@ -15,6 +22,11 @@ exporters:
   awsxray:
     region: "ap-northeast-1"
     local_mode: false
+  awscloudwatch:
+    namespace: "OpenTelemetry/Flask"
+    metric_expiration_time: 15m
+    resource_filters:
+      - prefix: service.name
  
 extensions:
   health_check:
@@ -28,6 +40,6 @@ service:
       processors: [batch]
       exporters: [otlp, awsxray]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, hostmetrics]
       processors: [batch]
-      exporters: [otlp]
+      exporters: [otlp, awsxray, awscloudwatch]
