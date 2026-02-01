@@ -1,0 +1,29 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  batch:
+  resourcedetection:
+    detectors: [env, system]
+
+exporters:
+  awsxray:
+    region: "ap-northeast-1"
+  # logging を debug に変更
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, resourcedetection]
+      # ここも debug に変更
+      exporters: [awsxray, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

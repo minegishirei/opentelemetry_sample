@@ -1,0 +1,28 @@
+version: "3"
+
+services:
+  otel-collector:
+    image: public.ecr.aws/aws-observability/aws-otel-collector:latest
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ~/.aws:/root/.aws:ro
+    ports:
+      - "4317:4317"
+    environment:
+      # プロファイルを指定（default以外を使う場合はここを変更）
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_REGION=ap-northeast-1
+    command: ["--config=/etc/otel-collector-config.yaml"]
+
+  flask-app:
+    build:
+      context: ./flask
+    ports:
+      - "3000:3000"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=flask-app,deployment.environment=local
+      # ADOT Distro を使うための Python 設定
+      - OTEL_PYTHON_ID_GENERATOR=xray
+    depends_on:
+      - otel-collector
