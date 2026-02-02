@@ -227,3 +227,9 @@ resource "aws_ecs_service" "this" {
 
   depends_on = [aws_lb_listener.http]
 }
+
+resource "aws_s3_bucket" "otel_config" {
+  bucket = "${local.prefix}-otel-config"
+
+  force_destroy = true
+}
