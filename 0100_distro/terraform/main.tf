@@ -1,0 +1,174 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+}
+
+locals {
+  prefix = var.name_prefix
+}
+
+# =============================
+# ECS Cluster
+# =============================
+resource "aws_ecs_cluster" "this" {
+  name = "${local.prefix}-cluster"
+}
+
+# =============================
+# IAM Role (Task Execution)
+# =============================
+resource "aws_iam_role" "ecs_task_execution" {
+  name                 = "${local.prefix}-ecs-task-execution-role"
+  permissions_boundary = var.permission_boundary_arn
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# =============================
+# Security Groups
+# =============================
+
+# ALB
+resource "aws_security_group" "alb" {
+  name   = "${local.prefix}-alb-sg"
+  vpc_id = var.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ECS
+resource "aws_security_group" "ecs" {
+  name   = "${local.prefix}-ecs-sg"
+  vpc_id = var.vpc_id
+
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# =============================
+# ALB
+# =============================
+resource "aws_lb" "this" {
+  name               = "${local.prefix}-alb"
+  load_balancer_type = "application"
+  subnets            = var.alb_subnet_ids
+  security_groups    = [aws_security_group.alb.id]
+}
+
+resource "aws_lb_target_group" "this" {
+  name        = "${local.prefix}-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path = "/"
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+}
+
+# =============================
+# Task Definition
+# =============================
+resource "aws_ecs_task_definition" "this" {
+  family                   = "${local.prefix}-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "${local.prefix}-nginx"
+      image     = "nginx:latest"
+      essential = true
+      portMappings = [{
+        containerPort = 80
+        protocol      = "tcp"
+      }]
+    }
+  ])
+}
+
+# =============================
+# ECS Service (ALB連携)
+# =============================
+resource "aws_ecs_service" "this" {
+  name            = "${local.prefix}-service"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.this.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.subnet_ids
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = var.assign_public_ip
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.this.arn
+    container_name   = "${local.prefix}-nginx"
+    container_port   = 80
+  }
+
+  depends_on = [aws_lb_listener.http]
+}
