@@ -30,6 +30,7 @@ resource "aws_ecs_cluster" "this" {
 # 1. タスクロールを新設 (コンテナがAWSサービスと通信するため)
 resource "aws_iam_role" "ecs_task_role" {
   name = "${local.prefix}-ecs-task-role"
+  permissions_boundary = var.permission_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -44,22 +45,6 @@ resource "aws_iam_role" "ecs_task_role" {
 resource "aws_iam_role_policy_attachment" "task_role_otel" {
   role       = aws_iam_role.ecs_task_role.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-}
-
-# 3. タスク定義に task_role_arn を追加
-resource "aws_ecs_task_definition" "this" {
-  family                   = "${local.prefix}-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-
-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
-  task_role_arn      = aws_iam_role.ecs_task_role.arn # ここを追加！
-
-  container_definitions = jsonencode([
-    # ... (以下略)
-  ])
 }
 
 # =============================
