@@ -203,7 +203,7 @@ resource "aws_ecs_task_definition" "this" {
     # =====================
     {
       name      = "${local.prefix}-flask"
-      image     = aws_ecr_repository.app.repository_url # ECRのURLを参照
+      image     = aws_ecr_repository.this.repository_url # ECRのURLを参照
       essential = true
 
       portMappings = [{
@@ -264,7 +264,7 @@ resource "aws_ecs_service" "this" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.this.arn
-    container_name   = "${local.prefix}-nginx"
+    container_name   = "${local.prefix}-flask"
     container_port   = 80
   }
 
