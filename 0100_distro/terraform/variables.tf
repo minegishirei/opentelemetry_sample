@@ -31,11 +31,3 @@ variable "permission_boundary_arn" {
   description = "IAM Permission Boundary ARN"
   type        = string
 }
-
-variable "otel_config_bucket" {
-  type = string
-}
-
-variable "otel_config_key" {
-  type = string
-}

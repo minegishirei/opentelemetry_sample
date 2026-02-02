@@ -15,7 +15,10 @@ provider "aws" {
 
 locals {
   prefix = var.name_prefix
+  otel_config_bucket = aws_s3_bucket.otel_config.bucket
+  otel_config_key    = aws_s3_object.otel_config.key
 }
+
 
 # =============================
 # ECS Cluster
@@ -176,7 +179,7 @@ resource "aws_ecs_task_definition" "this" {
       entryPoint = [
         "sh",
         "-c",
-        "aws s3 cp s3://${var.otel_config_bucket}/${var.otel_config_key} /etc/otel/config.yaml && /awscollector"
+        "aws s3 cp s3://${local.otel_config_bucket}/${local.otel_config_key} /etc/otel/config.yaml && /awscollector"
       ]
 
       portMappings = [
