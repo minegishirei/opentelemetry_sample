@@ -47,6 +47,12 @@ resource "aws_iam_role_policy_attachment" "task_role_otel" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+# X-Rayへの書き込み権限を追加
+resource "aws_iam_role_policy_attachment" "task_role_xray" {
+  role       = aws_iam_role.ecs_task_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
 # =============================
 # IAM Role (Task Execution)
 # =============================
@@ -168,6 +174,16 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+resource "aws_ecr_repository" "this" {
+  name                 = "${local.prefix}-app"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true # 検証用。本番では注意
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # =============================
 # Task Definition
 # =============================
@@ -186,8 +202,8 @@ resource "aws_ecs_task_definition" "this" {
     # Application (nginx)
     # =====================
     {
-      name      = "${local.prefix}-nginx"
-      image     = "nginx:latest"
+      name      = "${local.prefix}-flask"
+      image     = aws_ecr_repository.app.repository_url # ECRのURLを参照
       essential = true
 
       portMappings = [{
@@ -196,14 +212,9 @@ resource "aws_ecs_task_definition" "this" {
       }]
 
       environment = [
-        {
-          name  = "OTEL_EXPORTER_OTLP_ENDPOINT"
-          value = "http://localhost:4317"
-        },
-        {
-          name  = "OTEL_SERVICE_NAME"
-          value = "${local.prefix}-nginx"
-        }
+        { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4317" },
+        { name = "OTEL_RESOURCE_ATTRIBUTES",    value = "service.name=${local.prefix}-flask" },
+        { name = "OTEL_METRICS_EXPORTER",       value = "none" }
       ]
     },
 
@@ -220,6 +231,7 @@ resource "aws_ecs_task_definition" "this" {
             value = "true"
         }
       ]
+      command   = ["--config=/etc/otel-config.yaml"]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
