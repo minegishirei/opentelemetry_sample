@@ -136,17 +136,72 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
 
   container_definitions = jsonencode([
+    # =====================
+    # Application (nginx)
+    # =====================
     {
       name      = "${local.prefix}-nginx"
       image     = "nginx:latest"
       essential = true
+
       portMappings = [{
         containerPort = 80
         protocol      = "tcp"
       }]
+
+      environment = [
+        {
+          name  = "OTEL_EXPORTER_OTLP_ENDPOINT"
+          value = "http://localhost:4317"
+        },
+        {
+          name  = "OTEL_SERVICE_NAME"
+          value = "${local.prefix}-nginx"
+        }
+      ]
+    },
+
+    # =====================
+    # OpenTelemetry Collector (sidecar)
+    # =====================
+    {
+      name      = "otel-collector"
+      image     = "amazon/aws-otel-collector"
+      essential = false
+
+      command = [
+        "--config=/etc/otel/config.yaml"
+      ]
+
+      entryPoint = [
+        "sh",
+        "-c",
+        "aws s3 cp s3://${var.otel_config_bucket}/${var.otel_config_key} /etc/otel/config.yaml && /awscollector"
+      ]
+
+      portMappings = [
+        {
+          containerPort = 4317
+          protocol      = "tcp"
+        },
+        {
+          containerPort = 4318
+          protocol      = "tcp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/${local.prefix}/otel"
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "otel"
+        }
+      }
     }
   ])
 }
+
 
 # =============================
 # ECS Service (ALB連携)
