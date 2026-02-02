@@ -4,12 +4,14 @@ from opentelemetry.instrumentation.flask import FlaskInstrumentor
 
 app = Flask(__name__)
 
-# これだけでFlaskの全ルートが自動的にトレース対象になります
 FlaskInstrumentor().instrument_app(app)
+tracer = trace.get_tracer(__name__)
+
 
 @app.route("/")
 def hello():
-    return "Hello from Flask with OTel!"
+    with tracer.start_as_current_span("hello-handler"):
+        return "Hello from Flask with OTel!"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)

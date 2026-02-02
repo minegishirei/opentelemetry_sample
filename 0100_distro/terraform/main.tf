@@ -199,7 +199,7 @@ resource "aws_ecs_task_definition" "this" {
 
   container_definitions = jsonencode([
     # =====================
-    # Application (nginx)
+    # Application (flask)
     # =====================
     {
       name      = "${local.prefix}-flask"
@@ -211,8 +211,16 @@ resource "aws_ecs_task_definition" "this" {
         protocol      = "tcp"
       }]
 
+      # container_definitions の flask側
+      command = [
+        "opentelemetry-instrument",
+        "--traces_exporter", "otlp",
+        "--metrics_exporter", "none",
+        "python", "app.py" # 通常の起動コマンド
+      ]
+      
       environment = [
-        { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4317" },
+        { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "localhost:4317" },
         { name = "OTEL_RESOURCE_ATTRIBUTES",    value = "service.name=${local.prefix}-flask" },
         { name = "OTEL_METRICS_EXPORTER",       value = "none" }
       ]
@@ -238,13 +246,12 @@ resource "aws_ecs_task_definition" "this" {
           "awslogs-create-group" = "True"
           "awslogs-group"         = "/ecs/example-task-definition"
           "awslogs-region"        = data.aws_region.current.name
-          "awslogs-stream-prefix" = "nginx"
+          "awslogs-stream-prefix" = "flask"
         }
       }
     }
   ])
 }
-
 
 # =============================
 # ECS Service (ALB連携)
