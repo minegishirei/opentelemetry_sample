@@ -13,10 +13,10 @@ provider "aws" {
   region = var.region
 }
 
+data "aws_region" "current" {}
+
 locals {
   prefix = var.name_prefix
-  otel_config_bucket = aws_s3_bucket.otel_config.bucket
-  otel_config_key    = aws_s3_object.otel_config.key
 }
 
 
@@ -25,6 +25,41 @@ locals {
 # =============================
 resource "aws_ecs_cluster" "this" {
   name = "${local.prefix}-cluster"
+}
+
+# 1. タスクロールを新設 (コンテナがAWSサービスと通信するため)
+resource "aws_iam_role" "ecs_task_role" {
+  name = "${local.prefix}-ecs-task-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# 2. OTelに必要な権限をタスクロールに付与
+resource "aws_iam_role_policy_attachment" "task_role_otel" {
+  role       = aws_iam_role.ecs_task_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+# 3. タスク定義に task_role_arn を追加
+resource "aws_ecs_task_definition" "this" {
+  family                   = "${local.prefix}-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task_role.arn # ここを追加！
+
+  container_definitions = jsonencode([
+    # ... (以下略)
+  ])
 }
 
 # =============================
@@ -47,6 +82,28 @@ resource "aws_iam_role" "ecs_task_execution" {
 resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   role       = aws_iam_role.ecs_task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_extra_policy" {
+  name = "${local.prefix}-ecs-extra-policy"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "s3:GetObject",
+          "s3:GetBucketLocation",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 # =============================
@@ -137,6 +194,7 @@ resource "aws_ecs_task_definition" "this" {
   memory                   = "512"
 
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task_role.arn # ここを追加！
 
   container_definitions = jsonencode([
     # =====================
@@ -168,37 +226,22 @@ resource "aws_ecs_task_definition" "this" {
     # OpenTelemetry Collector (sidecar)
     # =====================
     {
-      name      = "otel-collector"
-      image     = "amazon/aws-otel-collector"
-      essential = false
-
-      command = [
-        "--config=/etc/otel/config.yaml"
-      ]
-
-      entryPoint = [
-        "sh",
-        "-c",
-        "aws s3 cp s3://${local.otel_config_bucket}/${local.otel_config_key} /etc/otel/config.yaml && /awscollector"
-      ]
-
-      portMappings = [
+      name      = "aws-otel-collector"
+      image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.47.0"
+      essential = true,
+      environment = [
         {
-          containerPort = 4317
-          protocol      = "tcp"
-        },
-        {
-          containerPort = 4318
-          protocol      = "tcp"
+            name = "AWS_OTEL_ECS_ENABLE_CONTAINER_INSIGHTS"
+            value = "true"
         }
       ]
-
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/${local.prefix}/otel"
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "otel"
+          "awslogs-create-group" = "True"
+          "awslogs-group"         = "/ecs/example-task-definition"
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "nginx"
         }
       }
     }
@@ -229,10 +272,4 @@ resource "aws_ecs_service" "this" {
   }
 
   depends_on = [aws_lb_listener.http]
-}
-
-resource "aws_s3_bucket" "otel_config" {
-  bucket = "${local.prefix}-otel-config"
-
-  force_destroy = true
 }
